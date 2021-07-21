@@ -1,5 +1,19 @@
-FROM java:alpine
-ENV SONAR_SCANNER_VERSION 4.2.0.1873
+FROM adoptopenjdk/openjdk11:alpine-jre
+
+
+ENV SONAR_SCANNER_VERSION 4.6.2.2472
+
+ARG SONAR_SCANNER_HOME=/sonar-scanner-${SONAR_SCANNER_VERSION}
+ARG UID=1000
+ARG GID=1000
+ENV JAVA_HOME=/opt/java/openjdk \
+    HOME=/tmp \
+    XDG_CONFIG_HOME=/tmp \
+    SONAR_SCANNER_HOME=${SONAR_SCANNER_HOME} \
+    SONAR_USER_HOME=${SONAR_SCANNER_HOME}/.sonar \
+    PATH=/opt/java/openjdk/bin:${SONAR_SCANNER_HOME}/bin:${PATH} \
+    SRC_PATH=/usr/src
+
 RUN apk update && apk add --no-cache wget && \
     wget -q https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${SONAR_SCANNER_VERSION}.zip && \
     unzip sonar-scanner-cli-${SONAR_SCANNER_VERSION} && \
@@ -14,61 +28,92 @@ RUN apk add --no-cache \
 # - docker run --rm debian:stretch grep '^hosts:' /etc/nsswitch.conf
 RUN [ ! -e /etc/nsswitch.conf ] && echo 'hosts: files dns' > /etc/nsswitch.conf
 
-ENV GOLANG_VERSION 1.13.4
+ENV PATH /usr/local/go/bin:$PATH
+
+ENV GOLANG_VERSION 1.16.6
 
 RUN set -eux; \
 	apk add --no-cache --virtual .build-deps \
 		bash \
 		gcc \
+		gnupg \
+		go \
 		musl-dev \
 		openssl \
-		go \
 	; \
-	export \
-# set GOROOT_BOOTSTRAP such that we can actually build Go
-		GOROOT_BOOTSTRAP="$(go env GOROOT)" \
-# ... and set "cross-building" related vars to the installed system's values so that we create a build targeting the proper arch
-# (for example, if our build host is GOARCH=amd64, but our build env/image is GOARCH=386, our build needs GOARCH=386)
-		GOOS="$(go env GOOS)" \
-		GOARCH="$(go env GOARCH)" \
-		GOHOSTOS="$(go env GOHOSTOS)" \
-		GOHOSTARCH="$(go env GOHOSTARCH)" \
-	; \
-# also explicitly set GO386 and GOARM if appropriate
-# https://github.com/docker-library/golang/issues/184
 	apkArch="$(apk --print-arch)"; \
 	case "$apkArch" in \
-		armhf) export GOARM='6' ;; \
-		x86) export GO386='387' ;; \
+		'x86_64') \
+			export GOARCH='amd64' GOOS='linux'; \
+			;; \
+		'armhf') \
+			export GOARCH='arm' GOARM='6' GOOS='linux'; \
+			;; \
+		'armv7') \
+			export GOARCH='arm' GOARM='7' GOOS='linux'; \
+			;; \
+		'aarch64') \
+			export GOARCH='arm64' GOOS='linux'; \
+			;; \
+		'x86') \
+			export GO386='softfloat' GOARCH='386' GOOS='linux'; \
+			;; \
+		'ppc64le') \
+			export GOARCH='ppc64le' GOOS='linux'; \
+			;; \
+		's390x') \
+			export GOARCH='s390x' GOOS='linux'; \
+			;; \
+		*) echo >&2 "error: unsupported architecture '$apkArch' (likely packaging update needed)"; exit 1 ;; \
 	esac; \
 	\
-	wget -O go.tgz "https://golang.org/dl/go$GOLANG_VERSION.src.tar.gz"; \
-	echo '95dbeab442ee2746b9acf0934c8e2fc26414a0565c008631b04addb8c02e7624 *go.tgz' | sha256sum -c -; \
+# https://github.com/golang/go/issues/38536#issuecomment-616897960
+	url='https://dl.google.com/go/go1.16.6.src.tar.gz'; \
+	sha256='a3a5d4bc401b51db065e4f93b523347a4d343ae0c0b08a65c3423b05a138037d'; \
+	\
+	wget -O go.tgz.asc "$url.asc"; \
+	wget -O go.tgz "$url"; \
+	echo "$sha256 *go.tgz" | sha256sum -c -; \
+	\
+# https://github.com/golang/go/issues/14739#issuecomment-324767697
+	export GNUPGHOME="$(mktemp -d)"; \
+# https://www.google.com/linuxrepositories/
+	gpg --batch --keyserver keyserver.ubuntu.com --recv-keys 'EB4C 1BFD 4F04 2F6D DDCC EC91 7721 F63B D38B 4796'; \
+	gpg --batch --verify go.tgz.asc go.tgz; \
+	gpgconf --kill all; \
+	rm -rf "$GNUPGHOME" go.tgz.asc; \
+	\
 	tar -C /usr/local -xzf go.tgz; \
 	rm go.tgz; \
 	\
-	cd /usr/local/go/src; \
-	./make.bash; \
+	( \
+		cd /usr/local/go/src; \
+# set GOROOT_BOOTSTRAP + GOHOST* such that we can build Go successfully
+		export GOROOT_BOOTSTRAP="$(go env GOROOT)" GOHOSTOS="$GOOS" GOHOSTARCH="$GOARCH"; \
+		./make.bash; \
+	); \
 	\
+# pre-compile the standard library, just like the official binary release tarballs do
+	go install std; \
+# go install: -race is only supported on linux/amd64, linux/ppc64le, linux/arm64, freebsd/amd64, netbsd/amd64, darwin/amd64 and windows/amd64
+#	go install -race std; \
+	\
+	apk del --no-network .build-deps; \
+	\
+# remove a few intermediate / bootstrapping files the official binary release tarballs do not contain
 	rm -rf \
-# https://github.com/golang/go/blob/0b30cf534a03618162d3015c8705dd2231e34703/src/cmd/dist/buildtool.go#L121-L125
+		/usr/local/go/pkg/*/cmd \
 		/usr/local/go/pkg/bootstrap \
-# https://golang.org/cl/82095
-# https://github.com/golang/build/blob/e3fe1605c30f6a3fd136b561569933312ede8782/cmd/release/releaselet.go#L56
 		/usr/local/go/pkg/obj \
+		/usr/local/go/pkg/tool/*/api \
+		/usr/local/go/pkg/tool/*/go_bootstrap \
+		/usr/local/go/src/cmd/dist/dist \
 	; \
-	apk del .build-deps; \
 	\
-	export PATH="/usr/local/go/bin:$PATH"; \
 	go version
 
 ENV GOPATH /go
-ENV PATH $GOPATH/bin:/usr/local/go/bin:$PATH
-
-ENV SONARQUBE_SERVER=
-ENV SONARQUBE_PROJECT_KEY=
-ENV SONARQUBE_LOGIN=
-ENV SONARQUBE_SOURCES=
-
+ENV PATH $GOPATH/bin:$PATH
 RUN mkdir -p "$GOPATH/src" "$GOPATH/bin" && chmod -R 777 "$GOPATH"
-CMD sonar-scanner -Dsonar.host.url=${SONARQUBE_SERVER} -Dsonar.projectKey=$SONARQUBE_PROJECT_KEY -Dsonar.sources=${SONARQUBE_SOURCES} -Dsonar.login=${SONARQUBE_LOGIN}
+
+CMD ["sonar-scanner"]
