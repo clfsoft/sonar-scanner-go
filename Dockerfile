@@ -118,6 +118,6 @@ RUN mkdir -p "$GOPATH/src" "$GOPATH/bin" && chmod -R 777 "$GOPATH"
 
 ADD dependency-check-6.2.2-release.zip /usr/share/
 ENV PATH /usr/share/dependency-check/bin:$PATH
-RUN cd /usr/share/ && unzip ./dependency-check-6.2.2-release.zip && rm /usr/share/dependency-check-6.2.2-release.zip && dependency-check --updateonly
+RUN cd /usr/share/ && unzip ./dependency-check-6.2.2-release.zip && rm /usr/share/dependency-check-6.2.2-release.zip && dependency-check.sh --updateonly
 
 CMD ["sonar-scanner"]
