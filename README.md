@@ -4,7 +4,7 @@ This docker image adds
 golang v1.16.6 
 and sonar-scanner 4.6.2.2472 
 and dependency-check-6.5.3 
-and golangci-lint
+and golangci-lint-1.44.0-linux-amd64
 on top of java:alpine image.   
 
 It is useful for integrating SonarQube for golang projects. I personally use this image in a custom helm chart.
