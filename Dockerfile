@@ -116,10 +116,9 @@ ENV GOPATH /go
 ENV PATH $GOPATH/bin:$PATH
 RUN mkdir -p "$GOPATH/src" "$GOPATH/bin" && chmod -R 777 "$GOPATH"
 
-ADD golangci-lint-1.44.0-linux-amd64.tar.gz /usr/share/
+COPY golangci-lint-1.44.0-linux-amd64.tar.gz dependency-check-6.5.3-release.zip /usr/share/
 RUN cd /usr/share/ && tar -zxvf ./golangci-lint-1.44.0-linux-amd64.tar.gz && rm /usr/share/golangci-lint-1.44.0-linux-amd64.tar.gz
 
-ADD dependency-check-6.5.3-release.zip /usr/share/
 ENV PATH /usr/share/golangci-lint-1.44.0-linux-amd64:/usr/share/dependency-check/bin:$PATH
 RUN cd /usr/share/ && unzip ./dependency-check-6.5.3-release.zip && rm /usr/share/dependency-check-6.5.3-release.zip && dependency-check.sh --updateonly
 
