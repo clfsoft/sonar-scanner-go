@@ -1,18 +1,26 @@
-name: SonarQube Scanner with Golang
-
+name: SonarQube Scanner with Golang 
 on: [push]
-
 jobs:
-
   build:
-
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v1
-    - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag sonarscanner-go:$(date +%s)    
-    - name: Publish the Docker image
-      run: docker login docker.pkg.github.com --username clfsoft && \
-            docker tag IMAGE_ID docker.pkg.github.com/clfsoft/sonar-scanner-go/IMAGE_NAME:VERSION && \
-            docker push docker.pkg.github.com/clfsoft/sonar-scanner-go/IMAGE_NAME:VERSION
+      - name: Check out the repo
+        uses: actions/checkout@v2
+      - name: Log in to Docker Hub
+        uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@98669ae865ea3cffbcbaa878cf57c20bbf1c6c38
+        with:
+          images: clfsoft/sonar-scanner-cli-golang
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@ad44023a93711e3deb337508980b4b5e9bcdc5dc
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

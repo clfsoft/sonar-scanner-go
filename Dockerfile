@@ -20,8 +20,8 @@ RUN apk update && apk add --no-cache wget && \
     rm sonar-scanner-cli-${SONAR_SCANNER_VERSION}.zip && \
     cd /usr/bin && ln -s /sonar-scanner-${SONAR_SCANNER_VERSION}/bin/sonar-scanner sonar-scanner
 
-RUN apk add --no-cache \
-		ca-certificates
+RUN apk --no-cache add git build-base ca-certificates
+
 
 # set up nsswitch.conf for Go's "netgo" implementation
 # - https://github.com/golang/go/blob/go1.9.1/src/net/conf.go#L194-L275
